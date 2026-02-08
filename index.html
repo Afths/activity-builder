@@ -12,7 +12,7 @@
 <body style="margin: 0;">
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef, useCallback } = React;
 
     const SUPABASE_URL = 'https://aeusujfuxnxwbvccmusk.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFldXN1amZ1eG54d2J2Y2NtdXNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE5MDAwNDAsImV4cCI6MjA1NzQ3NjA0MH0.rMuOA4LyVVao4_alpNopj2E4mpzEHYxBOMJxv6jrOVA';
@@ -38,6 +38,8 @@
       const [dragOverIdx, setDragOverIdx] = useState(null);
       const [savedOrder, setSavedOrder] = useState({});
       const [saving, setSaving] = useState(false);
+      const [edits, setEdits] = useState({});
+      const [editingField, setEditingField] = useState(null);
 
       const showToast = (msg, type = "info") => {
         const id = Date.now();
@@ -112,11 +114,13 @@
       }, []);
 
       const getActivitiesForTopic = (topicId) => activities[topicId] || [];
-      const backToTopics = () => setSelectedTopic(null);
-      const backToCourses = () => { setSelectedCourse(null); setSelectedTopic(null); };
+      const backToTopics = () => { setSelectedTopic(null); setEdits({}); setEditingField(null); };
+      const backToCourses = () => { setSelectedCourse(null); setSelectedTopic(null); setEdits({}); setEditingField(null); };
 
-      const hasChanges = selectedTopic && savedOrder[selectedTopic.id] &&
+      const orderChanged = selectedTopic && savedOrder[selectedTopic.id] &&
         JSON.stringify((activities[selectedTopic.id] || []).map(a => a.id)) !== JSON.stringify(savedOrder[selectedTopic.id]);
+      const hasEdits = Object.keys(edits).length > 0;
+      const hasChanges = orderChanged || hasEdits;
 
       const onDrop = (topicId, fromIdx, toIdx) => {
         if (fromIdx === toIdx) return;
@@ -128,20 +132,88 @@
         });
       };
 
-      const saveOrder = async () => {
+      const stageEdit = (activityId, field, value, optIdx) => {
+        setEdits(prev => {
+          const ae = { ...prev[activityId] };
+          if (field === 'main_text') {
+            ae.main_text = value;
+          } else if (field === 'option') {
+            ae.options = ae.options || {};
+            ae.options[optIdx] = value;
+          } else if (field === 'explanation') {
+            ae.explanations = ae.explanations || {};
+            ae.explanations[optIdx] = value;
+          }
+          return { ...prev, [activityId]: ae };
+        });
+      };
+
+      const saveChanges = async () => {
         if (!selectedTopic || saving) return;
         const list = activities[selectedTopic.id] || [];
         setSaving(true);
         try {
-          await Promise.all(list.map((a, i) =>
-            fetch(SUPABASE_URL + '/rest/v1/activities?id=eq.' + a.id, {
+          const patches = list.map((a, i) => {
+            const body = { order_number: i + 1 };
+            const e = edits[a.id];
+            if (e) {
+              if (e.main_text !== undefined) body.main_text = e.main_text;
+              if (e.options) {
+                const opts = [...(a.options || [])];
+                Object.entries(e.options).forEach(([idx, val]) => { opts[Number(idx)] = val; });
+                body.options = opts;
+              }
+              if (e.explanations) {
+                let expl = a.explanation;
+                if (Array.isArray(expl)) {
+                  expl = [...expl];
+                  Object.entries(e.explanations).forEach(([idx, val]) => { expl[Number(idx)] = val; });
+                } else {
+                  // Convert to array
+                  const len = (a.options || []).length;
+                  expl = Array.from({ length: len }, (_, k) => getOptionExplanation(a, k));
+                  Object.entries(e.explanations).forEach(([idx, val]) => { expl[Number(idx)] = val; });
+                }
+                body.explanation = expl;
+              }
+            }
+            return fetch(SUPABASE_URL + '/rest/v1/activities?id=eq.' + a.id, {
               method: 'PATCH',
               headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-              body: JSON.stringify({ order_number: i + 1 }),
-            }).then(r => { if (!r.ok) throw new Error('Failed to update ' + a.id); })
-          ));
+              body: JSON.stringify(body),
+            }).then(r => { if (!r.ok) throw new Error('Failed to update ' + a.id); });
+          });
+          await Promise.all(patches);
+          // Apply edits into local activity state so UI reflects saved data
+          setActivities(prev => {
+            const updated = [...(prev[selectedTopic.id] || [])];
+            updated.forEach((a, i) => {
+              const e = edits[a.id];
+              if (e) {
+                if (e.main_text !== undefined) updated[i] = { ...a, main_text: e.main_text };
+                if (e.options) {
+                  const opts = [...(updated[i].options || [])];
+                  Object.entries(e.options).forEach(([idx, val]) => { opts[Number(idx)] = val; });
+                  updated[i] = { ...updated[i], options: opts };
+                }
+                if (e.explanations) {
+                  let expl = updated[i].explanation;
+                  if (Array.isArray(expl)) {
+                    expl = [...expl];
+                  } else {
+                    const len = (updated[i].options || []).length;
+                    expl = Array.from({ length: len }, (_, k) => getOptionExplanation(updated[i], k));
+                  }
+                  Object.entries(e.explanations).forEach(([idx, val]) => { expl[Number(idx)] = val; });
+                  updated[i] = { ...updated[i], explanation: expl };
+                }
+              }
+            });
+            return { ...prev, [selectedTopic.id]: updated };
+          });
           setSavedOrder(prev => ({ ...prev, [selectedTopic.id]: list.map(a => a.id) }));
-          showToast('Order saved', 'success');
+          setEdits({});
+          showToast('Changes saved', 'success');
         } catch (err) {
           showToast('Save failed: ' + err.message, 'error');
         }
@@ -194,6 +266,33 @@
         if (typeof explanation === 'object' && explanation.default) return optIdx === 0 ? explanation.default : "";
         if (typeof explanation === 'string') return optIdx === 0 ? explanation : "";
         return "";
+      };
+
+      // Inline editable text component
+      const EditableText = ({ value, onCommit, fieldKey, style, multiline }) => {
+        const isEditing = editingField === fieldKey;
+        const ref = useRef(null);
+        const staged = edits[fieldKey.split(':')[0]]; // check if there's a staged edit
+        const commit = useCallback((val) => {
+          if (val !== value) onCommit(val);
+          setEditingField(null);
+        }, [value, onCommit]);
+
+        useEffect(() => {
+          if (isEditing && ref.current) {
+            ref.current.focus();
+            // Move cursor to end
+            const el = ref.current;
+            if (el.setSelectionRange) el.setSelectionRange(el.value.length, el.value.length);
+          }
+        }, [isEditing]);
+
+        if (isEditing) {
+          const inputStyle = { ...style, width: '100%', boxSizing: 'border-box', border: '1px solid #8B4513', borderRadius: 4, padding: '4px 6px', outline: 'none', fontFamily: 'inherit', resize: multiline ? 'vertical' : 'none' };
+          if (multiline) return <textarea ref={ref} defaultValue={value} rows={2} style={inputStyle} onBlur={(e) => commit(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setEditingField(null); }} />;
+          return <input ref={ref} defaultValue={value} style={inputStyle} onBlur={(e) => commit(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditingField(null); }} />;
+        }
+        return <div onClick={() => setEditingField(fieldKey)} style={{ ...style, cursor: 'text', borderBottom: '1px dashed transparent' }} onMouseEnter={(e) => e.currentTarget.style.borderBottomColor = '#D4C4B0'} onMouseLeave={(e) => e.currentTarget.style.borderBottomColor = 'transparent'}>{value || <span style={{ color: '#CCC', fontStyle: 'italic' }}>Click to edit</span>}</div>;
       };
 
       const container = { minHeight: "100vh", background: "linear-gradient(135deg, #FAF8F5 0%, #F5F1E8 100%)", padding: "16px 12px", fontFamily: "'Inter', -apple-system, sans-serif" };
@@ -269,7 +368,7 @@
                     {!selectedTopic && (<><div style={{ fontSize: 11, color: "#8B7355", marginTop: 4 }}>{courseData.levels.length} Levels &bull; {totalTopics} Topics &bull; {totalActivities} Activities</div></>)}
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {selectedTopic && hasChanges && <button onClick={saveOrder} disabled={saving} style={{ background: "#8B4513", color: "white", border: "none", padding: "4px 14px", borderRadius: 6, cursor: saving ? "wait" : "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.2s", opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving...' : 'Save Order'}</button>}
+                    {selectedTopic && hasChanges && <button onClick={saveChanges} disabled={saving} style={{ background: "#8B4513", color: "white", border: "none", padding: "4px 14px", borderRadius: 6, cursor: saving ? "wait" : "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.2s", opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving...' : 'Save'}</button>}
                     {selectedTopic && <button onClick={backToTopics} style={btnSecondary}>&larr; Back</button>}
                     {!selectedTopic && <button onClick={backToCourses} style={btnSecondary}>&larr; Courses</button>}
                   </div>
@@ -332,16 +431,35 @@
                                   <div style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: "#F5F1E8", fontSize: 9, fontWeight: 700, color: "#8B4513", textTransform: "uppercase", letterSpacing: "0.5px" }}>{activity.type.replace(/_/g, " ")}</div>
                                   {Array.isArray(activity.correct_answer) && <span style={{ marginLeft: 6, padding: "2px 6px", borderRadius: 4, background: "#DDD6FE", color: "#5B21B6", fontSize: 9, fontWeight: 600, textTransform: "uppercase" }}>MULTI-ANSWER</span>}
                                 </div>
-                                <div style={{ fontSize: 13, color: "#2C1810", lineHeight: 1.5, marginTop: 6 }}>{activity.main_text}</div>
+                                <EditableText
+                                  value={edits[activity.id]?.main_text !== undefined ? edits[activity.id].main_text : activity.main_text}
+                                  fieldKey={activity.id + ':main_text'}
+                                  style={{ fontSize: 13, color: "#2C1810", lineHeight: 1.5, marginTop: 6 }}
+                                  multiline
+                                  onCommit={(val) => stageEdit(activity.id, 'main_text', val)}
+                                />
                                 {activity.options && activity.options.length > 0 && (
                                   <div style={{ marginTop: 10 }}>
                                     {activity.options.map((option, optIdx) => {
                                       const isCorrect = isCorrectOption(activity, optIdx);
                                       const explanation = getOptionExplanation(activity, optIdx);
+                                      const editedOpt = edits[activity.id]?.options?.[optIdx];
+                                      const editedExpl = edits[activity.id]?.explanations?.[optIdx];
                                       return (
                                         <div key={optIdx} style={{ padding: "8px 12px", marginBottom: 4, borderRadius: 6, background: isCorrect ? "#D1FAE5" : "#F9FAFB", border: isCorrect ? "1px solid #6EE7B7" : "1px solid #E5E7EB", fontSize: 12, color: isCorrect ? "#065F46" : "#374151" }}>
-                                          <div>{option}</div>
-                                          {explanation && <div style={{ fontSize: 10, marginTop: 4, color: isCorrect ? "#047857" : "#6B7280", fontStyle: "italic", lineHeight: 1.4 }}>{explanation}</div>}
+                                          <EditableText
+                                            value={editedOpt !== undefined ? editedOpt : option}
+                                            fieldKey={activity.id + ':opt:' + optIdx}
+                                            style={{ fontSize: 12, color: isCorrect ? "#065F46" : "#374151" }}
+                                            onCommit={(val) => stageEdit(activity.id, 'option', val, optIdx)}
+                                          />
+                                          <EditableText
+                                            value={editedExpl !== undefined ? editedExpl : (explanation || '')}
+                                            fieldKey={activity.id + ':expl:' + optIdx}
+                                            style={{ fontSize: 10, marginTop: 4, color: isCorrect ? "#047857" : "#6B7280", fontStyle: "italic", lineHeight: 1.4 }}
+                                            multiline
+                                            onCommit={(val) => stageEdit(activity.id, 'explanation', val, optIdx)}
+                                          />
                                         </div>
                                       );
                                     })}
