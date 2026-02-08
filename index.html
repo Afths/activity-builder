@@ -341,14 +341,21 @@
                   </h1>
                   <div style={{ fontSize: 11, color: "#8B7355", marginTop: 4 }}>{courses.length} Courses across {areas.length} Areas</div>
                 </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
                 {areas.map(area => {
                   const areaCourses = courses.filter(c => c.area_id === area.id);
                   if (areaCourses.length === 0) return null;
+                  const statusPill = { display: "inline-block", padding: "2px 8px", borderRadius: 10, fontSize: 9, fontWeight: 600, letterSpacing: "0.3px", textTransform: "uppercase", whiteSpace: "nowrap" };
+                  const statusStyles = {
+                    ACTIVE: { ...statusPill, background: "#D1FAE5", color: "#065F46" },
+                    COMING_SOON: { ...statusPill, background: "#FEF3C7", color: "#92400E" },
+                    DRAFT: { ...statusPill, background: "#F3F4F6", color: "#9CA3AF" },
+                  };
                   return (
-                    <div key={area.id} style={{ marginBottom: 20 }}>
-                      <div style={{ marginBottom: 8 }}>
+                    <div key={area.id} style={{ background: "white", borderRadius: 10, padding: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)", border: "1px solid #F0E9DC" }}>
+                      <div style={{ marginBottom: 10 }}>
                         <div style={{ display: "flex", alignItems: "center" }}>
-                          <h2 style={{ margin: 0, fontSize: 14, color: "#2C1810", fontWeight: 700 }}>{area.title}</h2>
+                          <h2 style={{ margin: 0, fontSize: 13, color: "#2C1810", fontWeight: 700 }}>{area.title}</h2>
                           <div style={levelPill}>{areaCourses.length}</div>
                         </div>
                         {area.description && <div style={{ fontSize: 10, color: "#8B7355", marginTop: 2 }}>{area.description}</div>}
@@ -358,23 +365,16 @@
                           const isDraft = course.status === 'DRAFT';
                           const topicCount = course.levels.reduce((sum, l) => sum + l.topics.length, 0);
                           const actCount = course.levels.reduce((sum, l) => sum + l.topics.reduce((s, t) => s + getActivitiesForTopic(t.id).length, 0), 0);
-                          const statusPill = { display: "inline-block", padding: "2px 8px", borderRadius: 10, fontSize: 9, fontWeight: 600, letterSpacing: "0.3px", textTransform: "uppercase", marginLeft: 8, whiteSpace: "nowrap" };
-                          const statusStyles = {
-                            ACTIVE: { ...statusPill, background: "#D1FAE5", color: "#065F46" },
-                            COMING_SOON: { ...statusPill, background: "#FEF3C7", color: "#92400E" },
-                            DRAFT: { ...statusPill, background: "#F3F4F6", color: "#9CA3AF" },
-                          };
                           return (
-                            <div key={course.id} style={{ ...card, display: "flex", alignItems: "center", padding: 12, cursor: "pointer", opacity: isDraft ? 0.5 : 1 }} onClick={() => setSelectedCourse(course)} onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 2px 8px rgba(139,69,19,0.12)")} onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.06)")}>
-                              {course.icon && <img src={APP_URL + course.icon} alt="" style={{ width: 28, height: 28, marginRight: 12 }} onError={(e) => e.target.style.display = 'none'} />}
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
-                                  <div style={{ fontSize: 14, fontWeight: 600, color: "#2C1810" }}>{course.title}</div>
-                                  <span style={statusStyles[course.status] || statusStyles.DRAFT}>{(course.status || 'DRAFT').replace('_', ' ')}</span>
+                            <div key={course.id} style={{ background: "#FAFAF8", borderRadius: 6, padding: "8px 10px", cursor: "pointer", opacity: isDraft ? 0.5 : 1, border: "1px solid #F0E9DC", transition: "all 0.2s" }} onClick={() => setSelectedCourse(course)} onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 2px 8px rgba(139,69,19,0.12)")} onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                {course.icon && <img src={APP_URL + course.icon} alt="" style={{ width: 22, height: 22, flexShrink: 0 }} onError={(e) => e.target.style.display = 'none'} />}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: "#2C1810" }}>{course.title}</div>
+                                  <div style={{ fontSize: 10, color: "#8B7355", marginTop: 1 }}>{course.levels.length}L &bull; {topicCount}T &bull; {actCount}A</div>
                                 </div>
-                                <div style={{ fontSize: 11, color: "#8B7355", marginTop: 2 }}>{course.levels.length} Levels &bull; {topicCount} Topics &bull; {actCount} Activities</div>
+                                <span style={statusStyles[course.status] || statusStyles.DRAFT}>{(course.status || 'DRAFT').replace('_', ' ')}</span>
                               </div>
-                              <div style={{ fontSize: 18, color: "#D4C4B0", marginLeft: 8 }}>&rsaquo;</div>
                             </div>
                           );
                         })}
@@ -382,6 +382,7 @@
                     </div>
                   );
                 })}
+                </div>
               </div>
             )}
 
