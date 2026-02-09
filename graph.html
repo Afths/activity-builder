@@ -577,7 +577,7 @@
                     fetchTable('courses', 'select=id,title,color,status'),
                     fetchTable('levels', 'select=id,course_id'),
                     fetchTable('topics', 'select=id,level_id,title'),
-                    fetchTable('topic_links', 'select=source_topic_id,target_topic_id,strength,reason')
+                    fetchTable('topic_links', 'select=topic_a_id,topic_b_id,strength')
                         .catch(() => []) // table may not exist yet
                 ]);
 
@@ -614,12 +614,12 @@
                 const topicById = {};
                 transformedTopics.forEach(t => { topicById[t.id] = t; });
 
-                // Explicit relationships from topic_links
+                // Explicit relationships from topic_links (strength 0-1 scaled to 1-10)
                 const relationships = topicLinks.map(l => ({
-                    source: l.source_topic_id,
-                    target: l.target_topic_id,
-                    strength: l.strength,
-                    reason: l.reason || ''
+                    source: l.topic_a_id,
+                    target: l.topic_b_id,
+                    strength: Math.round(l.strength * 10),
+                    reason: ''
                 })).filter(r => topicById[r.source] && topicById[r.target]);
 
                 // Implicit same-course links (strength 9)
