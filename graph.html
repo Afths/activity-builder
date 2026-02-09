@@ -543,7 +543,17 @@
 
         // Default fallback colors and icons for courses without them
         const DEFAULT_COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A78BFA', '#F87171', '#34D399', '#60A5FA', '#FB923C'];
-        const DEFAULT_ICON = '📚';
+        const AREA_ICONS = {
+            'Tech Basement': '💻',
+            'Wealth Vault': '💰',
+            'Wellbeing Garden': '🌿',
+            'Relationship Campsite': '🏕️',
+            'Business Lounge': '💼',
+            'Communication Atrium': '🗣️',
+            "Artisan's Atelier": '🎨',
+            'Culture Salon': '📚'
+        };
+        const DEFAULT_ICON = '📌';
 
         let colorMap = {};
         let iconMap = {};
@@ -595,7 +605,7 @@
                 // Build colorMap and iconMap keyed by area id
                 areas.forEach((a, i) => {
                     colorMap[a.id] = DEFAULT_COLORS[i % DEFAULT_COLORS.length];
-                    iconMap[a.id] = DEFAULT_ICON;
+                    iconMap[a.id] = AREA_ICONS[a.title] || DEFAULT_ICON;
                 });
 
                 // Transform areas for legend
