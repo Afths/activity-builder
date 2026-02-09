@@ -573,42 +573,51 @@
                 console.log('Starting init...');
 
                 // Fetch all tables in parallel
-                const [courses, levels, topics, topicLinks] = await Promise.all([
-                    fetchTable('courses', 'select=id,title,color,status'),
+                const [areas, courses, levels, topics, topicLinks] = await Promise.all([
+                    fetchTable('areas', 'select=id,title,order_number&order=order_number'),
+                    fetchTable('courses', 'select=id,title,color,status,area_id'),
                     fetchTable('levels', 'select=id,course_id'),
                     fetchTable('topics', 'select=id,level_id,title'),
                     fetchTable('topic_links', 'select=topic_a_id,topic_b_id,strength')
                         .catch(() => []) // table may not exist yet
                 ]);
 
-                console.log('Fetched:', courses.length, 'courses,', topics.length, 'topics,', topicLinks.length, 'topic_links');
+                console.log('Fetched:', areas.length, 'areas,', courses.length, 'courses,', topics.length, 'topics,', topicLinks.length, 'topic_links');
 
-                // Build level -> course_id lookup
+                // Build lookups
                 const levelToCourse = {};
                 levels.forEach(l => { levelToCourse[l.id] = l.course_id; });
 
-                // Build colorMap and iconMap dynamically from courses
-                courses.forEach((c, i) => {
-                    colorMap[c.id] = c.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length];
-                    iconMap[c.id] = DEFAULT_ICON;
+                const courseById = {};
+                courses.forEach(c => { courseById[c.id] = c; });
+
+                // Build colorMap and iconMap keyed by area id
+                areas.forEach((a, i) => {
+                    colorMap[a.id] = DEFAULT_COLORS[i % DEFAULT_COLORS.length];
+                    iconMap[a.id] = DEFAULT_ICON;
                 });
 
-                // Transform courses
-                const transformedCourses = courses.map(c => ({
-                    id: c.id,
-                    name: c.title,
-                    color: colorMap[c.id]
+                // Transform areas for legend
+                const transformedAreas = areas.map(a => ({
+                    id: a.id,
+                    name: a.title,
+                    color: colorMap[a.id]
                 }));
 
-                // Transform topics (join through levels to get courseId)
-                const transformedTopics = topics.map(t => ({
-                    id: t.id,
-                    courseId: levelToCourse[t.level_id],
-                    name: t.title,
-                    description: '',
-                    totalConnectionStrength: 0,
-                    connectionCount: 0
-                })).filter(t => t.courseId); // skip orphans with no level/course
+                // Transform topics (join through levels + courses to get areaId)
+                const transformedTopics = topics.map(t => {
+                    const courseId = levelToCourse[t.level_id];
+                    const course = courseId ? courseById[courseId] : null;
+                    return {
+                        id: t.id,
+                        courseId: courseId,
+                        areaId: course ? course.area_id : null,
+                        name: t.title,
+                        description: '',
+                        totalConnectionStrength: 0,
+                        connectionCount: 0
+                    };
+                }).filter(t => t.courseId && t.areaId); // skip orphans
 
                 // Build topic lookup for relationship generation
                 const topicById = {};
@@ -665,7 +674,7 @@
                 });
 
                 data = {
-                    courses: transformedCourses,
+                    areas: transformedAreas,
                     topics: transformedTopics,
                     relationships: relationships
                 };
@@ -703,8 +712,8 @@
 
             svg.call(zoom);
 
-            // Initialize all courses as active
-            data.courses.forEach(c => activeCourses.add(c.id));
+            // Initialize all areas as active
+            data.areas.forEach(a => activeCourses.add(a.id));
 
             // Filter out nodes with ZERO connections completely - don't even add them to the graph
             const nodes = data.topics.filter(d => (d.connectionCount || 0) > 0).map(d => ({...d}));
@@ -731,8 +740,8 @@
                     return d.strength >= minStrength &&
                            sourceNode &&
                            targetNode &&
-                           activeCourses.has(sourceNode.courseId) &&
-                           activeCourses.has(targetNode.courseId);
+                           activeCourses.has(sourceNode.areaId) &&
+                           activeCourses.has(targetNode.areaId);
                 });
 
                 const activeConnectionCounts = {};
@@ -745,7 +754,7 @@
                 });
 
                 const visibleNodes = nodes.filter(n => {
-                    return activeCourses.has(n.courseId) && (activeConnectionCounts[n.id] || 0) > 0;
+                    return activeCourses.has(n.areaId) && (activeConnectionCounts[n.id] || 0) > 0;
                 });
 
                 if (visibleNodes.length === 0) return;
@@ -891,7 +900,7 @@
                     .attr('cx', '30%')
                     .attr('cy', '30%');
 
-                const baseColor = d3.color(colorMap[node.courseId]);
+                const baseColor = d3.color(colorMap[node.areaId]);
                 const highlightColor = baseColor.brighter(1.8);
                 const midColor = baseColor.brighter(0.3);
                 const shadowColor = baseColor.darker(1.2);
@@ -923,7 +932,7 @@
                 node.append('circle')
                     .attr('class', 'node-glow')
                     .attr('r', d => (d.radius || 18) * (1.4 + i * 0.3))
-                    .attr('fill', d => colorMap[d.courseId])
+                    .attr('fill', d => colorMap[d.areaId])
                     .attr('opacity', d => {
                         // Subtle glow - reduced opacity
                         const sizeRatio = (d.radius - 12) / 28;
@@ -985,7 +994,7 @@
                 .attr('stroke-width', 0)
                 .attr('fill', d => {
                     // Make a VERY pale version of the node color - almost white with just a hint
-                    const baseColor = d3.color(colorMap[d.courseId]);
+                    const baseColor = d3.color(colorMap[d.areaId]);
                     const hsl = d3.hsl(baseColor);
                     hsl.l = 0.92; // Very close to white
                     hsl.s = 0.3;  // Low saturation for just a hint of color
@@ -1108,25 +1117,25 @@
             // Add title
             legend.append('div')
                 .attr('class', 'legend-title')
-                .text('SKILLS');
+                .text('AREAS');
 
-            // Add course items
-            data.courses.forEach(course => {
+            // Add area items
+            data.areas.forEach(area => {
                 legend.append('div')
                     .attr('class', 'legend-item')
-                    .attr('data-course', course.id)
+                    .attr('data-course', area.id)
                     .html(`
-                        <span class="legend-icon" style="color: ${course.color};">${iconMap[course.id]}</span>
-                        <span>${course.name}</span>
+                        <span class="legend-icon" style="color: ${area.color};">${iconMap[area.id]}</span>
+                        <span>${area.name}</span>
                     `)
-                    .on('click', () => toggleCourse(course.id));
+                    .on('click', () => toggleCourse(area.id));
             });
 
             // Tooltip functions
             const tooltip = d3.select('#tooltip');
 
             function showTooltip(event, d) {
-                const course = data.courses.find(c => c.id === d.courseId);
+                const area = data.areas.find(a => a.id === d.areaId);
                 const connections = d.connectionCount || 0;
                 const totalStrength = d.totalConnectionStrength || 0;
 
@@ -1254,8 +1263,8 @@
 
             stats.innerHTML = `
                 <div class="stat-card">
-                    <div class="stat-value">${data.courses.length}</div>
-                    <div class="stat-label">Courses</div>
+                    <div class="stat-value">${data.areas.length}</div>
+                    <div class="stat-label">Areas</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-value">${totalTopics}</div>
@@ -1275,30 +1284,30 @@
                 </div>
             `;
 
-            // Course filter
+            // Area filter
             const courseFilter = document.getElementById('course-filter');
-            data.courses.forEach(course => {
+            data.areas.forEach(area => {
                 const option = document.createElement('option');
-                option.value = course.id;
-                option.textContent = course.name;
+                option.value = area.id;
+                option.textContent = area.name;
                 courseFilter.appendChild(option);
             });
 
             // Topics table - use database values
             const topicsTable = document.getElementById('topics-table').querySelector('tbody');
             data.topics.forEach(topic => {
-                const course = data.courses.find(c => c.id === topic.courseId);
+                const area = data.areas.find(a => a.id === topic.areaId);
                 const connections = topic.connectionCount || 0;
                 const totalStrength = topic.totalConnectionStrength || 0;
                 const row = document.createElement('tr');
-                row.dataset.course = topic.courseId;
+                row.dataset.course = topic.areaId;
                 if (connections === 0) {
                     row.classList.add('no-connections');
                 }
                 row.innerHTML = `
                     <td>
-                        <span class="color-dot" style="background: ${course.color};"></span>
-                        ${course.name}
+                        <span class="color-dot" style="background: ${area ? area.color : '#888'};"></span>
+                        ${area ? area.name : 'Unknown'}
                     </td>
                     <td>
                         <strong>${topic.name}</strong>
@@ -1380,8 +1389,8 @@
             const filteredLinks = allLinks.filter(d => {
                 const sourceNode = nodes.find(t => t.id === d.source.id || t.id === d.source);
                 const targetNode = nodes.find(t => t.id === d.target.id || t.id === d.target);
-                const sourceCourse = sourceNode ? sourceNode.courseId : null;
-                const targetCourse = targetNode ? targetNode.courseId : null;
+                const sourceCourse = sourceNode ? sourceNode.areaId : null;
+                const targetCourse = targetNode ? targetNode.areaId : null;
 
                 return d.strength >= minStrength &&
                        sourceNode &&
@@ -1398,8 +1407,8 @@
                     const targetNode = nodes.find(t => t.id === d.target.id);
                     const show = sourceNode && targetNode &&
                                 d.strength >= minStrength &&
-                                activeCourses.has(sourceNode.courseId) &&
-                                activeCourses.has(targetNode.courseId);
+                                activeCourses.has(sourceNode.areaId) &&
+                                activeCourses.has(targetNode.areaId);
                     return show ? 1 : 0;
                 })
                 .on('end', function(d) {
@@ -1407,8 +1416,8 @@
                     const targetNode = nodes.find(t => t.id === d.target.id);
                     const show = sourceNode && targetNode &&
                                 d.strength >= minStrength &&
-                                activeCourses.has(sourceNode.courseId) &&
-                                activeCourses.has(targetNode.courseId);
+                                activeCourses.has(sourceNode.areaId) &&
+                                activeCourses.has(targetNode.areaId);
                     d3.select(this).style('display', show ? 'block' : 'none');
                 });
 
@@ -1426,12 +1435,12 @@
             node.transition()
                 .duration(800)
                 .style('opacity', d => {
-                    const inActiveCourse = activeCourses.has(d.courseId);
+                    const inActiveCourse = activeCourses.has(d.areaId);
                     const hasActiveConnections = (activeConnectionCounts[d.id] || 0) > 0;
                     return (inActiveCourse && hasActiveConnections) ? 1 : 0;
                 })
                 .on('end', function(d) {
-                    const inActiveCourse = activeCourses.has(d.courseId);
+                    const inActiveCourse = activeCourses.has(d.areaId);
                     const hasActiveConnections = (activeConnectionCounts[d.id] || 0) > 0;
                     d3.select(this).style('display', (inActiveCourse && hasActiveConnections) ? 'block' : 'none');
                 });
@@ -1445,8 +1454,8 @@
                     const targetNode = nodes.find(t => t.id === linkData.target.id);
                     const show = sourceNode && targetNode &&
                                 linkData.strength >= minStrength &&
-                                activeCourses.has(sourceNode.courseId) &&
-                                activeCourses.has(targetNode.courseId);
+                                activeCourses.has(sourceNode.areaId) &&
+                                activeCourses.has(targetNode.areaId);
                     return show ? 0.5 : 0;
                 });
 
