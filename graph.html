@@ -631,36 +631,6 @@
                     reason: ''
                 })).filter(r => topicById[r.source] && topicById[r.target]);
 
-                // Implicit same-course links (strength 9)
-                const courseTopics = {};
-                transformedTopics.forEach(t => {
-                    if (!courseTopics[t.courseId]) courseTopics[t.courseId] = [];
-                    courseTopics[t.courseId].push(t.id);
-                });
-
-                // Track existing explicit pairs to avoid duplicates
-                const explicitPairs = new Set();
-                relationships.forEach(r => {
-                    explicitPairs.add(`${r.source}|${r.target}`);
-                    explicitPairs.add(`${r.target}|${r.source}`);
-                });
-
-                Object.values(courseTopics).forEach(ids => {
-                    for (let i = 0; i < ids.length; i++) {
-                        for (let j = i + 1; j < ids.length; j++) {
-                            const key = `${ids[i]}|${ids[j]}`;
-                            if (!explicitPairs.has(key)) {
-                                relationships.push({
-                                    source: ids[i],
-                                    target: ids[j],
-                                    strength: 8,
-                                    reason: 'Same course'
-                                });
-                            }
-                        }
-                    }
-                });
-
                 // Calculate connectionCount and totalConnectionStrength per topic
                 relationships.forEach(r => {
                     if (topicById[r.source]) {
