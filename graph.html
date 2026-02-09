@@ -850,9 +850,9 @@
 
             // Store calculated positions and reset to center
             nodes.forEach(node => {
-                // Variable size based on connection count (1-8 range, map to radius 10-40)
+                // Variable size based on connection count (1-8 range, map to radius 8-45)
                 const count = node.connectionCount || 1;
-                node.radius = 10 + Math.pow(count, 0.8) * 5;
+                node.radius = 8 + Math.pow(count, 1.2) * 3.5;
 
                 node.targetX = node.x;
                 node.targetY = node.y;
