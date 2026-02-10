@@ -577,7 +577,10 @@
         };
 
         // Default fallback colors and icons for courses without them
-        const DEFAULT_COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A78BFA', '#F87171', '#34D399', '#60A5FA', '#FB923C'];
+        // 8 distinct colors for areas (order matches areas by order_number)
+        // Tech Basement, Wealth Vault, Wellbeing Garden, Relationship Campsite,
+        // Business Lounge, Communication Atrium, Artisan's Atelier, Culture Salon
+        const DEFAULT_COLORS = ['#60A5FA', '#F59E0B', '#34D399', '#F472B6', '#A78BFA', '#FF6B6B', '#4ECDC4', '#FFE66D'];
         const AREA_ICONS = {
             'Tech Basement': '💻',
             'Wealth Vault': '💰',
